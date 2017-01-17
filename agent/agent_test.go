@@ -74,11 +74,18 @@ func TestAgent_LoadOutput(t *testing.T) {
 	assert.Equal(t, 1, len(a.Config.Outputs))
 
 	c = config.NewConfig()
+	c.OutputFilters = []string{"newrelic"}
+	err = c.LoadConfig("../internal/config/testdata/telegraf-agent.toml")
+	assert.NoError(t, err)
+	a, _ = NewAgent(c)
+	assert.Equal(t, 1, len(a.Config.Outputs))
+
+	c = config.NewConfig()
 	c.OutputFilters = []string{}
 	err = c.LoadConfig("../internal/config/testdata/telegraf-agent.toml")
 	assert.NoError(t, err)
 	a, _ = NewAgent(c)
-	assert.Equal(t, 3, len(a.Config.Outputs))
+	assert.Equal(t, 4, len(a.Config.Outputs))
 
 	c = config.NewConfig()
 	c.OutputFilters = []string{"foo"}

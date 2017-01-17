@@ -63,6 +63,10 @@
   #  ie, if this tag exists, it's value will be used as the routing key
   routing_tag = "host"
 
+# Send telegraf metrics to newrelic plugin api
+[[outputs.newrelic]]
+  ## NewRelic license key
+  license = "dummy"
 
 ###############################################################################
 #                                  PLUGINS                                    #
