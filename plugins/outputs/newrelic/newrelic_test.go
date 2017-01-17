@@ -91,8 +91,8 @@ func initServer(t *testing.T) *httptest.Server {
 					},
 					"components": [
 						{
-							"duration": "0",
-							"guid": "com.influxdata.telegraf",
+							"duration": "60",
+							"guid": "test.sonica.telegraf",
 							"name": "#HOSTNAME#",
 							"metrics": {
 								"Component/test1/value1/value":  {
@@ -126,7 +126,7 @@ func TestRequestSerialize(t *testing.T) {
 	var request NRRequest
 
 	var c NRComponent
-	c.GUID = default_guid
+	c.GUID = GUID
 	c.Duration = 60
 	c.Name = fakehostname
 
@@ -150,7 +150,7 @@ func TestRequestSerialize(t *testing.T) {
 		"components": [
 			{
 				"duration": "60",
-				"guid": "com.influxdata.telegraf",
+				"guid": "test.sonica.telegraf",
 				"name": "testhostname",
 				"metrics": {
 					"Component/test1/value1/value": {
@@ -169,9 +169,9 @@ func TestRequestSerialize(t *testing.T) {
 }
 
 func TestLicenceKeyHeader(t *testing.T) {
-	if testing.Short() {
+	/*if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
-	}
+	}*/
 	server := initServer(t)
 	defer server.Close()
 
@@ -187,9 +187,9 @@ func TestLicenceKeyHeader(t *testing.T) {
 }
 
 func TestWrite(t *testing.T) {
-	if testing.Short() {
+	/*if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
-	}
+	}*/
 	server := initServer(t)
 	defer server.Close()
 
@@ -205,9 +205,9 @@ func TestWrite(t *testing.T) {
 }
 
 func TestMultiplyWrite(t *testing.T) {
-	if testing.Short() {
+	/*if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
-	}
+	}*/
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if body, err := ioutil.ReadAll(r.Body); err == nil {
 			hostname, _ := os.Hostname()
@@ -220,8 +220,8 @@ func TestMultiplyWrite(t *testing.T) {
 				},
 				"components": [
 					{
-						"duration": "0",
-						"guid": "com.influxdata.telegraf",
+						"duration": "60",
+						"guid": "test.sonica.telegraf",
 						"name": "#HOSTNAME#",
 						"metrics": {
 							"Component/m1/tagvalue1/value1":  {
@@ -269,8 +269,8 @@ func TestMultiplyWrite(t *testing.T) {
 						}
 					},
 					{
-						"duration": "0",
-						"guid": "com.influxdata.telegraf",
+						"duration": "60",
+						"guid": "test.sonica.telegraf",
 						"name": "#HOSTNAME#",
 						"metrics": {
 							"Component/m2/tagvalue2/v1": {
@@ -316,9 +316,9 @@ func TestMultiplyWrite(t *testing.T) {
 }
 
 func TestForceError(t *testing.T) {
-	if testing.Short() {
+	/*if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
-	}
+	}*/
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "application/json")
@@ -335,13 +335,4 @@ func TestForceError(t *testing.T) {
 	metrics := testutil.MockMetrics()
 	err = i.Write(metrics)
 	require.Error(t, err)
-}
-
-func TestGUIDConfig(t *testing.T) {
-	i := NewRelic{
-		License: fakelicence,
-	}
-	err := i.Connect()
-	require.NoError(t,err)
-	require.Equal(t,i.GUID,"com.influxdata.telegraf")
 }

@@ -12,17 +12,14 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-	"github.com/influxdata/telegraf/internal/config"
 )
 
 type (
 	NewRelic struct {
 		URL     string
 		License string
-		GUID string
 
 		client *http.Client
-		duration int
 	}
 
 	NRResponse struct {
@@ -64,19 +61,18 @@ type (
 
 var request NRRequest
 var sanitizedChars = strings.NewReplacer("/", "_", " ", "", "%", "Percent", ":", "_", `\`, "_", "[", "", "]", "",
-	".", "", "_", "")
+	".", "", "#", "", "_", "")
 
 const (
 	newrelic_api = "https://platform-api.newrelic.com/platform/v1/metrics"
 	mimetype     = "application/json"
-	default_guid   = "com.influxdata.telegraf"
+	GUID         = "test.sonica.telegraf"
 	licence_header = "X-License-Key"
-	prefix         = "Component/"
-	sampleConfig   = `
+	//DEFAULT_TEMPLATE = "Component/tags/measurement/field"
+	//DEFAULT_TEMPLATE = "Component/measurement/tags/field"
+	sampleConfig = `
 ## NewRelic license key
   license = ""
-  ## Your newrelic plugin identifier
-  #guid = "com.influxdata.telegraf"
 `
 )
 
@@ -88,10 +84,6 @@ func (n *NewRelic) Connect() error {
 	if n.License == "" {
 		return fmt.Errorf("Licence key is a required field for newrelic output")
 	}
-
-	if n.GUID == "" {
-		n.GUID = default_guid
-	}
 	n.client = &http.Client{}
 
 	hostname, err := os.Hostname()
@@ -102,15 +94,6 @@ func (n *NewRelic) Connect() error {
 	request.Agent.PID = os.Getpid()
 	request.Agent.Version = "1.0.0"
 	request.Agent.Host = hostname
-
-	c := config.NewConfig()
-	err = c.LoadConfig("")
-	if err == nil {
-		n.duration = int(c.Agent.FlushInterval.Duration.Seconds())
-	} else {
-		fmt.Errorf("FAILED to get flush interval %s",err)
-		n.duration = 0
-	}
 	return nil
 }
 
@@ -131,7 +114,7 @@ func (n *NewRelic) Write(metrics []telegraf.Metric) error {
 		return nil
 	}
 
-	components := n.BuildComponents(&metrics)
+	components := buildComponents(&metrics)
 	request.Components = components
 
 	return sendData(n, request)
@@ -141,8 +124,8 @@ func serialize(m *telegraf.Metric) map[string]NRMetric {
 	// TODO: use a class
 	values := make(map[string]NRMetric)
 	tags := buildTags((*m).Tags())
+	// todo check m.Type()
 	for k, v := range (*m).Fields() {
-		var parts []string
 		var value float64
 		switch t := v.(type) {
 		case int:
@@ -159,6 +142,8 @@ func serialize(m *telegraf.Metric) map[string]NRMetric {
 			} else {
 				value = 0
 			}
+		/*case time.Time:
+		value = float64(t.Unix())*/
 		default:
 			// Skip unsupported type.
 			continue
@@ -166,13 +151,11 @@ func serialize(m *telegraf.Metric) map[string]NRMetric {
 
 		mv := NRMetric{Total: value, Count: 1, Min: value, Max: value, SumOfSquares: value * value}
 
-		parts = append(parts, sanitizedChars.Replace((*m).Name()))
-		if (tags != "") {
-			parts = append(parts, tags)
-		}
-		parts = append(parts, sanitizedChars.Replace(k))
+		values["Component"+"/"+
+			sanitizedChars.Replace((*m).Name())+"/"+
+			tags+"/"+
+			sanitizedChars.Replace(k)] = mv
 
-		values[prefix + strings.Join(parts,"/")] = mv
 	}
 
 	return values
@@ -190,7 +173,7 @@ func equalsTags(lookupTable *map[string]Aggregator, search *telegraf.Metric) boo
 	return false
 }
 
-func (n *NewRelic) BuildComponents(metrics *[]telegraf.Metric) []NRComponent {
+func buildComponents(metrics *[]telegraf.Metric) []NRComponent {
 	var aggregator = make(map[string]Aggregator)
 
 	for _, metric := range *metrics {
@@ -230,9 +213,9 @@ func (n *NewRelic) BuildComponents(metrics *[]telegraf.Metric) []NRComponent {
 
 			var c = NRComponent{
 				Name:     host,
-				Duration: n.duration,
+				Duration: 60, // TODO find duration
 				Metrics:  serialize(&metric),
-				GUID:     n.GUID, //+ metric.Name(),
+				GUID:     GUID, //+ metric.Name(),
 			}
 			aggregator[name] = Aggregator{
 				Tags:      buildTags(metric.Tags()),
