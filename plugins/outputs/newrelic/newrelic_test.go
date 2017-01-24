@@ -91,7 +91,7 @@ func initServer(t *testing.T) *httptest.Server {
 					},
 					"components": [
 						{
-							"duration": "60",
+							"duration": "0",
 							"guid": "com.influxdata.telegraf",
 							"name": "#HOSTNAME#",
 							"metrics": {
@@ -220,7 +220,7 @@ func TestMultiplyWrite(t *testing.T) {
 				},
 				"components": [
 					{
-						"duration": "60",
+						"duration": "0",
 						"guid": "com.influxdata.telegraf",
 						"name": "#HOSTNAME#",
 						"metrics": {
@@ -269,7 +269,7 @@ func TestMultiplyWrite(t *testing.T) {
 						}
 					},
 					{
-						"duration": "60",
+						"duration": "0",
 						"guid": "com.influxdata.telegraf",
 						"name": "#HOSTNAME#",
 						"metrics": {
