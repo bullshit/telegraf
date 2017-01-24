@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"github.com/influxdata/telegraf/internal/config"
 )
 
 type (
@@ -21,6 +22,7 @@ type (
 		GUID string
 
 		client *http.Client
+		duration int
 	}
 
 	NRResponse struct {
@@ -100,6 +102,15 @@ func (n *NewRelic) Connect() error {
 	request.Agent.PID = os.Getpid()
 	request.Agent.Version = "1.0.0"
 	request.Agent.Host = hostname
+
+	c := config.NewConfig()
+	err = c.LoadConfig("")
+	if err == nil {
+		n.duration = int(c.Agent.FlushInterval.Duration.Seconds())
+	} else {
+		fmt.Errorf("FAILED to get flush interval %s",err)
+		n.duration = 0
+	}
 	return nil
 }
 
@@ -130,7 +141,6 @@ func serialize(m *telegraf.Metric) map[string]NRMetric {
 	// TODO: use a class
 	values := make(map[string]NRMetric)
 	tags := buildTags((*m).Tags())
-	// todo check m.Type()
 	for k, v := range (*m).Fields() {
 		var parts []string
 		var value float64
@@ -220,7 +230,7 @@ func (n *NewRelic) BuildComponents(metrics *[]telegraf.Metric) []NRComponent {
 
 			var c = NRComponent{
 				Name:     host,
-				Duration: 60, // TODO find duration
+				Duration: n.duration,
 				Metrics:  serialize(&metric),
 				GUID:     n.GUID, //+ metric.Name(),
 			}
