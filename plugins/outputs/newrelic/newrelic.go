@@ -18,6 +18,7 @@ type (
 	NewRelic struct {
 		URL     string
 		License string
+		GUID string
 
 		client *http.Client
 	}
@@ -66,13 +67,14 @@ var sanitizedChars = strings.NewReplacer("/", "_", " ", "", "%", "Percent", ":",
 const (
 	newrelic_api = "https://platform-api.newrelic.com/platform/v1/metrics"
 	mimetype     = "application/json"
-	GUID         = "test.sonica.telegraf"
+	default_guid   = "com.influxdata.telegraf"
 	licence_header = "X-License-Key"
-	//DEFAULT_TEMPLATE = "Component/tags/measurement/field"
-	//DEFAULT_TEMPLATE = "Component/measurement/tags/field"
-	sampleConfig = `
+	prefix         = "Component/"
+	sampleConfig   = `
 ## NewRelic license key
   license = ""
+  ## Your newrelic plugin identifier
+  #guid = "com.influxdata.telegraf"
 `
 )
 
@@ -83,6 +85,10 @@ func (n *NewRelic) Connect() error {
 
 	if n.License == "" {
 		return fmt.Errorf("Licence key is a required field for newrelic output")
+	}
+
+	if n.GUID == "" {
+		n.GUID = default_guid
 	}
 	n.client = &http.Client{}
 
@@ -114,7 +120,7 @@ func (n *NewRelic) Write(metrics []telegraf.Metric) error {
 		return nil
 	}
 
-	components := buildComponents(&metrics)
+	components := n.BuildComponents(&metrics)
 	request.Components = components
 
 	return sendData(n, request)
@@ -126,6 +132,7 @@ func serialize(m *telegraf.Metric) map[string]NRMetric {
 	tags := buildTags((*m).Tags())
 	// todo check m.Type()
 	for k, v := range (*m).Fields() {
+		var parts []string
 		var value float64
 		switch t := v.(type) {
 		case int:
@@ -142,8 +149,6 @@ func serialize(m *telegraf.Metric) map[string]NRMetric {
 			} else {
 				value = 0
 			}
-		/*case time.Time:
-		value = float64(t.Unix())*/
 		default:
 			// Skip unsupported type.
 			continue
@@ -151,11 +156,13 @@ func serialize(m *telegraf.Metric) map[string]NRMetric {
 
 		mv := NRMetric{Total: value, Count: 1, Min: value, Max: value, SumOfSquares: value * value}
 
-		values["Component"+"/"+
-			sanitizedChars.Replace((*m).Name())+"/"+
-			tags+"/"+
-			sanitizedChars.Replace(k)] = mv
+		parts = append(parts, sanitizedChars.Replace((*m).Name()))
+		if (tags != "") {
+			parts = append(parts, tags)
+		}
+		parts = append(parts, sanitizedChars.Replace(k))
 
+		values[prefix + strings.Join(parts,"/")] = mv
 	}
 
 	return values
@@ -173,7 +180,7 @@ func equalsTags(lookupTable *map[string]Aggregator, search *telegraf.Metric) boo
 	return false
 }
 
-func buildComponents(metrics *[]telegraf.Metric) []NRComponent {
+func (n *NewRelic) BuildComponents(metrics *[]telegraf.Metric) []NRComponent {
 	var aggregator = make(map[string]Aggregator)
 
 	for _, metric := range *metrics {
@@ -215,7 +222,7 @@ func buildComponents(metrics *[]telegraf.Metric) []NRComponent {
 				Name:     host,
 				Duration: 60, // TODO find duration
 				Metrics:  serialize(&metric),
-				GUID:     GUID, //+ metric.Name(),
+				GUID:     n.GUID, //+ metric.Name(),
 			}
 			aggregator[name] = Aggregator{
 				Tags:      buildTags(metric.Tags()),
