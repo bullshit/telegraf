@@ -64,7 +64,7 @@ type (
 
 var request NRRequest
 var sanitizedChars = strings.NewReplacer("/", "_", " ", "", "%", "Percent", ":", "_", `\`, "_", "[", "", "]", "",
-	".", "", "#", "", "_", "")
+	".", "", "_", "")
 
 const (
 	newrelic_api = "https://platform-api.newrelic.com/platform/v1/metrics"
