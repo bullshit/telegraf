@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
+	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
 	"os"
 	"os/signal"
 	"runtime"
@@ -24,6 +26,8 @@ import (
 
 var fDebug = flag.Bool("debug", false,
 	"turn on debug logging")
+var pprofAddr = flag.String("pprof-addr", "",
+	"pprof address to listen on, not activate pprof if empty")
 var fQuiet = flag.Bool("quiet", false,
 	"run in quiet mode")
 var fTest = flag.Bool("test", false, "gather metrics, print them out, and exit")
@@ -53,10 +57,12 @@ var fService = flag.String("service", "",
 
 // Telegraf version, populated linker.
 //   ie, -ldflags "-X main.version=`git describe --always --tags`"
+
 var (
-	version string
-	commit  string
-	branch  string
+	nextVersion = "1.4.0"
+	version     string
+	commit      string
+	branch      string
 )
 
 func init() {
@@ -87,6 +93,7 @@ The commands & flags are:
   --output-filter     filter the output plugins to enable, separator is :
   --usage             print usage for a plugin, ie, 'telegraf --usage mysql'
   --debug             print metrics as they're generated to stdout
+  --pprof-addr        pprof address to listen on, format: localhost:6060 or :6060
   --quiet             run in quiet mode
 
 Examples:
@@ -105,6 +112,9 @@ Examples:
 
   # run telegraf, enabling the cpu & memory input, and influxdb output plugins
   telegraf --config telegraf.conf --input-filter cpu:mem --output-filter influxdb
+
+  # run telegraf with pprof
+  telegraf --config telegraf.conf --pprof-addr localhost:6060
 `
 
 var stop chan struct{}
@@ -136,11 +146,21 @@ func reloadLoop(
 				log.Fatal("E! " + err.Error())
 			}
 		}
-		if len(c.Outputs) == 0 {
+		if !*fTest && len(c.Outputs) == 0 {
 			log.Fatalf("E! Error: no outputs found, did you provide a valid config file?")
 		}
 		if len(c.Inputs) == 0 {
 			log.Fatalf("E! Error: no inputs found, did you provide a valid config file?")
+		}
+
+		if int64(c.Agent.Interval.Duration) <= 0 {
+			log.Fatalf("E! Agent interval must be positive, found %s",
+				c.Agent.Interval.Duration)
+		}
+
+		if int64(c.Agent.FlushInterval.Duration) <= 0 {
+			log.Fatalf("E! Agent flush_interval must be positive; found %s",
+				c.Agent.Interval.Duration)
 		}
 
 		ag, err := agent.NewAgent(c)
@@ -188,20 +208,27 @@ func reloadLoop(
 			}
 		}()
 
-		log.Printf("I! Starting Telegraf (version %s)\n", version)
+		log.Printf("I! Starting Telegraf %s\n", displayVersion())
 		log.Printf("I! Loaded outputs: %s", strings.Join(c.OutputNames(), " "))
 		log.Printf("I! Loaded inputs: %s", strings.Join(c.InputNames(), " "))
 		log.Printf("I! Tags enabled: %s", c.ListTags())
 
 		if *fPidfile != "" {
-			f, err := os.Create(*fPidfile)
+			f, err := os.OpenFile(*fPidfile, os.O_CREATE|os.O_WRONLY, 0644)
 			if err != nil {
-				log.Fatalf("E! Unable to create pidfile: %s", err)
+				log.Printf("E! Unable to create pidfile: %s", err)
+			} else {
+				fmt.Fprintf(f, "%d\n", os.Getpid())
+
+				f.Close()
+
+				defer func() {
+					err := os.Remove(*fPidfile)
+					if err != nil {
+						log.Printf("E! Unable to remove pidfile: %s", err)
+					}
+				}()
 			}
-
-			fmt.Fprintf(f, "%d\n", os.Getpid())
-
-			f.Close()
 		}
 
 		ag.Run(shutdown)
@@ -239,6 +266,13 @@ func (p *program) Stop(s service.Service) error {
 	return nil
 }
 
+func displayVersion() string {
+	if version == "" {
+		return fmt.Sprintf("v%s~pre%s", nextVersion, commit)
+	}
+	return "v" + version
+}
+
 func main() {
 	flag.Usage = func() { usageExit(0) }
 	flag.Parse()
@@ -260,10 +294,27 @@ func main() {
 		processorFilters = strings.Split(":"+strings.TrimSpace(*fProcessorFilters)+":", ":")
 	}
 
+	if *pprofAddr != "" {
+		go func() {
+			pprofHostPort := *pprofAddr
+			parts := strings.Split(pprofHostPort, ":")
+			if len(parts) == 2 && parts[0] == "" {
+				pprofHostPort = fmt.Sprintf("localhost:%s", parts[1])
+			}
+			pprofHostPort = "http://" + pprofHostPort + "/debug/pprof"
+
+			log.Printf("I! Starting pprof HTTP server at: %s", pprofHostPort)
+
+			if err := http.ListenAndServe(*pprofAddr, nil); err != nil {
+				log.Fatal("E! " + err.Error())
+			}
+		}()
+	}
+
 	if len(args) > 0 {
 		switch args[0] {
 		case "version":
-			fmt.Printf("Telegraf v%s (git: %s %s)\n", version, branch, commit)
+			fmt.Printf("Telegraf %s (git: %s %s)\n", displayVersion(), branch, commit)
 			return
 		case "config":
 			config.PrintSampleConfig(
@@ -291,7 +342,7 @@ func main() {
 		}
 		return
 	case *fVersion:
-		fmt.Printf("Telegraf v%s (git: %s %s)\n", version, branch, commit)
+		fmt.Printf("Telegraf %s (git: %s %s)\n", displayVersion(), branch, commit)
 		return
 	case *fSampleConfig:
 		config.PrintSampleConfig(
