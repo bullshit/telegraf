@@ -119,7 +119,7 @@ func (m *Win_PerfCounters) AddItem(query string, objectName string, counter stri
 	}
 
 	newItem := &item{query, objectName, counter, instance, measurement,
-		include_total, handle, counterHandle}
+					 include_total, handle, counterHandle}
 	m.itemCache = append(m.itemCache, newItem)
 
 	return nil
@@ -133,7 +133,7 @@ func (m *Win_PerfCounters) SampleConfig() string {
 	return sampleConfig
 }
 
-func expandCounterQuery(query string) ([]string, error) {
+func expandQuery(query string) ([]string, error) {
 	var bufSize uint32
 	var buf []uint16
 	ret := PdhExpandWildCardPath(query, nil, &bufSize)
@@ -147,33 +147,54 @@ func expandCounterQuery(query string) ([]string, error) {
 	return nil, fmt.Errorf("Failed to expand query: '%s', err(%d)", query, ret)
 }
 
-func formatCounterQuery(objectname string, instance string, counter string) string {
-	if instance == "------" {
-		return "\\" + objectname + "\\" + counter
-	}
-	return "\\" + objectname + "(" + instance + ")\\" + counter
-}
+func formatAndExpandCounterQuery(objectname string, instance string, counter string, expand bool) ([]string, error) {
+	var query string
 
-func expandQuery(query string, expand bool) ([]string, error) {
-	if expand {
-		return expandCounterQuery(query)
+	if instance == "------" {
+		query = "\\" + objectname + "\\" + counter
+	} else {
+		query = "\\" + objectname + "(" + instance + ")\\" + counter
+	}
+
+	if instance == "*" || expand {
+		return expandQuery(query)
 	}
 	return []string{query}, nil
 }
 
-func (m *Win_PerfCounters) ParseConfig() error {
-	var query string
+func extractInstanceFromQuery(query string) (string, error) {
+	left_paren_idx := strings.Index(query, "(")
+	right_paren_idx := strings.Index(query, ")")
 
+	if left_paren_idx == -1 || right_paren_idx == -1 {
+		return "", errors.New("Could not extract instance name from: " + query)
+	}
+
+	return query[left_paren_idx+1:right_paren_idx], nil
+}
+
+func (m *Win_PerfCounters) ParseConfig() error {
 	if len(m.Object) > 0 {
 		for _, PerfObject := range m.Object {
 			for _, counter := range PerfObject.Counters {
 				for _, instance := range PerfObject.Instances {
 					objectname := PerfObject.ObjectName
-					query = formatCounterQuery(objectname, instance, counter)
-					expandedQueries, err := expandQuery(query, PerfObject.Expand)
+					queries, err := formatAndExpandCounterQuery(objectname, instance, counter, PerfObject.Expand)
 
-					for _, expandedQuery := range expandedQueries {
-						err = m.AddItem(expandedQuery, objectname, counter, instance,
+					for _, expandedQuery := range queries {
+						extractedInstance := instance
+						if instance == "*" || PerfObject.Expand {
+							extractedInstance, err = extractInstanceFromQuery(expandedQuery)
+							if err != nil {
+								fmt.Printf(err.Error())
+								continue
+							}
+
+							if extractedInstance == "_Total" && !PerfObject.IncludeTotal {
+								continue
+							}
+						}
+						err = m.AddItem(expandedQuery, objectname, counter, extractedInstance,
 							PerfObject.Measurement, PerfObject.IncludeTotal)
 						if err == nil {
 							if m.PrintValid {
