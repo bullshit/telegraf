@@ -108,8 +108,8 @@ func (n *NewRelic) Connect() error {
 	if err == nil {
 		n.duration = int(c.Agent.FlushInterval.Duration.Seconds())
 	} else {
-		fmt.Errorf("FAILED to get flush interval %s",err)
 		n.duration = 0
+		return fmt.Errorf("FAILED to get flush interval %s",err)
 	}
 	return nil
 }
